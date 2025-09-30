@@ -25,15 +25,18 @@ class SimpleAdsService:
         """
         Main method: resolve identities and check for active ads
         """
-        # Validate input
-        if not request.domain and not request.facebook_page:
+        # Validate input - treat empty strings as None
+        domain = request.domain.strip() if request.domain else None
+        facebook_page = request.facebook_page.strip() if request.facebook_page else None
+        
+        if not domain and not facebook_page:
             return CheckResponse(
                 success=False,
                 message="Either domain or facebook_page must be provided"
             )
         
         # Create cache key
-        cache_key = f"check:{request.domain or 'none'}:{request.facebook_page or 'none'}"
+        cache_key = f"check:{domain or 'none'}:{facebook_page or 'none'}"
         
         # Try cache first
         cached_result = await self.cache.get(cache_key)
@@ -43,7 +46,7 @@ class SimpleAdsService:
         try:
             # Step 1: Resolve identities
             domain, facebook_page, meta_page_id = await self._resolve_identities(
-                request.domain, request.facebook_page
+                domain, facebook_page
             )
             
             # Step 2: Check for ads in parallel
@@ -69,8 +72,8 @@ class SimpleAdsService:
             
         except Exception as e:
             return CheckResponse(
-                domain=request.domain,
-                facebook_page=request.facebook_page,
+                domain=domain,
+                facebook_page=facebook_page,
                 success=False,
                 message=f"Error during check: {str(e)}"
             )

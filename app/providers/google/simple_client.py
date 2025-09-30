@@ -44,14 +44,19 @@ class SimpleGoogleClient:
         try:
             domain = self._clean_domain(domain)
             
-            # Method 1: Check Google Ads Transparency Center
-            has_transparency_ads = await self._check_transparency_center(domain)
-            if has_transparency_ads:
-                return True
-            
-            # Method 2: Check website for Google Ads signals
+            # Method 1: Check website for Google Ads signals (most reliable)
             has_website_signals = await self._check_website_signals(domain)
             if has_website_signals:
+                return True
+            
+            # Method 2: Check Google search for ads
+            has_search_ads = await self._check_google_search_ads(domain)
+            if has_search_ads:
+                return True
+            
+            # Method 3: Check Google Ads Transparency Center
+            has_transparency_ads = await self._check_transparency_center(domain)
+            if has_transparency_ads:
                 return True
             
             return False
@@ -165,6 +170,74 @@ class SimpleGoogleClient:
             
         except Exception as e:
             print(f"Error checking website signals for {domain}: {e}")
+        
+        return False
+    
+    async def _check_google_search_ads(self, domain: str) -> bool:
+        """Check if domain shows ads in Google search results"""
+        try:
+            # Search for the domain name and brand terms
+            search_terms = [
+                domain,
+                domain.replace('.com', '').replace('.net', '').replace('.org', ''),
+                domain.split('.')[0]  # Just the brand name
+            ]
+            
+            for term in search_terms:
+                try:
+                    # Search Google for the term
+                    search_url = "https://www.google.com/search"
+                    params = {
+                        "q": term,
+                        "hl": "en",
+                        "gl": "us"
+                    }
+                    
+                    response = await self.client.get(search_url, params=params)
+                    
+                    if response.status_code == 200:
+                        content = response.text
+                        parser = HTMLParser(content)
+                        
+                        # Look for sponsored/ad indicators in search results
+                        ad_indicators = [
+                            "[data-text-ad]", "[data-ad-result]", ".ads-ad",
+                            ".commercial-unit-desktop-top", ".uEierd",  # Google ads containers
+                            "[aria-label*='Ad']", "[aria-label*='Sponsored']",
+                            ".ads-visurl", ".ad_cclk"  # Ad URL elements
+                        ]
+                        
+                        for selector in ad_indicators:
+                            ad_elements = parser.css(selector)
+                            for element in ad_elements:
+                                text = element.text().lower()
+                                href = element.attributes.get('href', '')
+                                
+                                # Check if the ad is related to our domain
+                                if (domain.lower() in text or 
+                                    domain.lower() in href or
+                                    term.lower() in text):
+                                    print(f"Google search ad found for {domain}: {text[:50]}...")
+                                    return True
+                        
+                        # Also check for "Ad" or "Sponsored" text near domain mentions
+                        content_lower = content.lower()
+                        if domain.lower() in content_lower:
+                            # Look for ad indicators near domain mentions
+                            domain_positions = [m.start() for m in re.finditer(re.escape(domain.lower()), content_lower)]
+                            for pos in domain_positions:
+                                # Check 200 characters before and after domain mention
+                                snippet = content_lower[max(0, pos-200):pos+200]
+                                if any(indicator in snippet for indicator in ['sponsored', 'ad·', '·ad', 'anuncio']):
+                                    print(f"Google search ad context found for {domain}")
+                                    return True
+                        
+                except Exception as e:
+                    print(f"Error searching Google for {term}: {e}")
+                    continue
+            
+        except Exception as e:
+            print(f"Error checking Google search ads for {domain}: {e}")
         
         return False
     

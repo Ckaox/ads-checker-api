@@ -67,9 +67,14 @@ if __name__ == "__main__":
     # Use PORT from environment (Render sets this) or fallback to settings
     port = int(os.environ.get("PORT", settings.API_PORT))
     
+    print(f"🚀 Starting Ads Checker API on {settings.API_HOST}:{port}")
+    print(f"📊 Debug mode: {settings.DEBUG}")
+    print(f"⚡ Cache TTL: {settings.CACHE_TTL}s")
+    
     uvicorn.run(
         "main:app",
         host=settings.API_HOST,
         port=port,
-        reload=settings.DEBUG
+        reload=settings.DEBUG,
+        access_log=not settings.DEBUG  # Reduce logs in production
     )

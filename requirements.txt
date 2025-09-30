@@ -1,8 +1,15 @@
+# Core FastAPI dependencies
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
+
+# HTTP client and parsing
 httpx==0.25.2
+selectolax==0.3.17
+
+# Data validation and settings
 pydantic==2.5.0
 pydantic-settings==2.1.0
-selectolax==0.3.17
+
+# Configuration and caching
 python-dotenv==1.0.0
 cachetools==5.3.2

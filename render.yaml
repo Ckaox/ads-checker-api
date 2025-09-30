@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: ads-checker-api
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    envVars:
+      - key: API_HOST
+        value: 0.0.0.0
+      - key: API_PORT
+        value: 10000
+      - key: DEBUG
+        value: false
+      - key: CACHE_TTL
+        value: 3600
+      # Add META_ACCESS_TOKEN in Render dashboard if needed

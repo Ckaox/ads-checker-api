@@ -150,9 +150,16 @@ class SimpleAdsService:
     async def _check_meta_ads(self, page_id: str) -> bool:
         """Check if Meta page has active ads"""
         try:
-            return await self.meta_client.check_ads_presence(page_id)
+            if not page_id:
+                print(f"⚠️  No Meta page ID available for ads check")
+                return False
+            
+            print(f"\n🔍 Starting Meta ads check with Page ID: {page_id}")
+            result = await self.meta_client.check_ads_presence(page_id)
+            print(f"Meta ads check result: {result}")
+            return result
         except Exception as e:
-            print(f"Error checking Meta ads for {page_id}: {e}")
+            print(f"❌ Error checking Meta ads for {page_id}: {e}")
             return False
     
     async def _check_google_ads(self, domain: str) -> bool:

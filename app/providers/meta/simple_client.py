@@ -95,27 +95,116 @@ class SimpleMetaClient:
     async def check_ads_presence(self, page_id: str) -> bool:
         """Check if a Facebook page has active ads"""
         try:
-            # Method 1: Check via Ad Library scraping (most reliable)
+            print(f"\n{'='*60}")
+            print(f"🔍 META ADS DETECTION START for Page ID: {page_id}")
+            print(f"{'='*60}")
+            
+            if not page_id or not page_id.strip():
+                print("❌ No page ID provided")
+                return False
+            
+            # Method 1: Direct check (simplest and most reliable)
+            print(f"\n📍 Method 1: Direct Ad Library check...")
+            has_ads_direct = await self._check_ads_direct(page_id)
+            if has_ads_direct:
+                print(f"✅ Meta ads FOUND via direct check")
+                return True
+            
+            # Method 2: Check via Ad Library scraping
+            print(f"\n📍 Method 2: Ad Library scraping...")
             has_ads_scraping = await self._check_ads_via_scraping(page_id)
             if has_ads_scraping:
+                print(f"✅ Meta ads FOUND via scraping")
                 return True
             
-            # Method 2: Alternative Ad Library search
+            # Method 3: Alternative Ad Library search
+            print(f"\n📍 Method 3: Alternative search...")
             has_ads_alternative = await self._check_ads_alternative_search(page_id)
             if has_ads_alternative:
+                print(f"✅ Meta ads FOUND via alternative")
                 return True
             
-            # Method 3: Use official API if available
+            # Method 4: Use official API if available
             if self.access_token:
+                print(f"\n📍 Method 4: Official API...")
                 has_ads_api = await self._check_ads_via_api(page_id)
                 if has_ads_api is not None:
+                    if has_ads_api:
+                        print(f"✅ Meta ads FOUND via API")
+                    else:
+                        print(f"❌ Meta ads NOT found via API")
                     return has_ads_api
             
+            print(f"\n❌ Meta ads NOT FOUND after all methods")
+            print(f"{'='*60}\n")
             return False
             
         except Exception as e:
-            print(f"Error checking ads presence for page {page_id}: {e}")
+            print(f"❌ Error checking ads presence for page {page_id}: {e}")
             return False
+    
+    async def _check_ads_direct(self, page_id: str) -> bool:
+        """Most direct and simple method to check for Meta ads"""
+        try:
+            # Use the public API endpoint that returns JSON
+            url = f"https://www.facebook.com/ads/library/async/search_ads/"
+            params = {
+                "q": "",
+                "ad_type": "all",
+                "search_type": "page",
+                "page_ids": page_id,
+                "active_status": "active",
+                "country": "ALL",
+                "media_type": "all"
+            }
+            
+            print(f"Requesting: {url}")
+            response = await self.client.get(url, params=params)
+            print(f"Status: {response.status_code}, Length: {len(response.text)} bytes")
+            
+            if response.status_code == 200:
+                content = response.text
+                
+                # Try to parse as JSON
+                try:
+                    import json
+                    data = json.loads(content)
+                    
+                    # Check various possible structures
+                    if isinstance(data, dict):
+                        # Look for ads in payload
+                        payload = data.get('payload', data)
+                        if isinstance(payload, dict):
+                            results = payload.get('results', payload.get('ads', payload.get('data', [])))
+                            if isinstance(results, list) and len(results) > 0:
+                                print(f"✅ Found {len(results)} ads in JSON response")
+                                return True
+                        
+                        # Check for isResultComplete or similar flags
+                        if data.get('isResultComplete') is False or data.get('forwardCursor'):
+                            # Has pagination, likely has results
+                            print(f"✅ Pagination detected, ads likely present")
+                            return True
+                            
+                except json.JSONDecodeError:
+                    print(f"Not JSON, checking as HTML...")
+                    # If not JSON, check as HTML
+                    pass
+                
+                # Check content for positive indicators
+                if 'ad_archive_id' in content or 'snapshot_url' in content:
+                    print(f"✅ Ad archive content detected")
+                    return True
+                
+                # Check for explicit "no ads" message
+                if len(content) < 500 or 'no results' in content.lower() or '"results":[]' in content:
+                    print(f"❌ No ads message or empty results")
+                    return False
+                    
+        except Exception as e:
+            print(f"Error in direct check: {e}")
+        
+        return False
     
     async def _check_ads_via_api(self, page_id: str) -> Optional[bool]:
         """Check ads using official Graph API"""
@@ -142,118 +231,166 @@ class SimpleMetaClient:
         return None
     
     async def _check_ads_via_scraping(self, page_id: str) -> bool:
-        """Check ads by scraping Ad Library"""
+        """Check ads by scraping Ad Library with improved detection"""
         try:
-            params = {
-                "active_status": "active",
-                "ad_type": "all",
-                "country": "ALL",
-                "search_type": "page",
-                "view_all_page_id": page_id
-            }
-            
-            response = await self.client.get(self.ad_library_url, params=params)
-            
-            if response.status_code == 200:
-                content = response.text
-                
-                # Look for indicators of active ads
-                active_indicators = [
-                    "active ads", "currently running", "ads are active",
-                    '\"active_status\":\"ACTIVE\"', '\"status\":\"ACTIVE\"',
-                    "ad_archive_result", "ads_archive",
-                    f'page_id\":\"{page_id}\"', f"page_id={page_id}",
-                    "advertisement", "sponsored"
-                ]
-                
-                content_lower = content.lower()
-                found_indicators = [ind for ind in active_indicators if ind.lower() in content_lower]
-                
-                if found_indicators:
-                    print(f"Meta ads indicators found for {page_id}: {found_indicators[:2]}")
-                    return True
-                
-                # Also check for JSON data structures
-                if '\"data\":[' in content and page_id in content:
-                    print(f"Meta ads data structure found for {page_id}")
-                    return True
-            
-        except Exception as e:
-            print(f"Error scraping ads for page {page_id}: {e}")
-        
-        return False
-    
-    async def _check_ads_alternative_search(self, page_id: str) -> bool:
-        """Alternative method to check for Meta ads using different approaches"""
-        try:
-            # Method 1: Direct Ad Library API endpoint
-            api_urls = [
-                f"https://www.facebook.com/ads/library/api/?search_type=page&search_page_ids={page_id}&active_status=active&ad_type=all&country=ALL",
-                f"https://graph.facebook.com/v18.0/ads_archive?search_page_ids={page_id}&ad_active_status=ACTIVE&ad_reached_countries=ALL&limit=1",
-                f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&view_all_page_id={page_id}"
+            # Try multiple URL formats for better success rate
+            urls_to_try = [
+                # Direct API endpoint
+                f"https://www.facebook.com/ads/library/async/search/?q=&type=page&page_ids={page_id}&active_status=active&ad_type=all&countries[0]=ALL",
+                # Regular library URL
+                f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&view_all_page_id={page_id}",
+                # Alternative format
+                f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&q=&search_type=page&media_type=all&page_ids={page_id}",
             ]
             
-            for url in api_urls:
+            for url in urls_to_try:
                 try:
-                    response = await self.client.get(url)
+                    print(f"Checking Meta ads for page {page_id} via: {url[:80]}...")
+                    response = await self.client.get(url, follow_redirects=True)
+                    
                     if response.status_code == 200:
                         content = response.text
                         content_lower = content.lower()
                         
-                        # Look for JSON responses with ads data
-                        if '"data":[' in content and len(content) > 100:
-                            # Parse potential JSON response
+                        # Debug: Check content length
+                        print(f"Response length: {len(content)} bytes")
+                        
+                        # Method 1: Check for JSON data with ads
+                        if '"data":' in content or '"payload":' in content:
                             try:
                                 import json
-                                data = json.loads(content)
-                                if isinstance(data, dict) and data.get('data'):
-                                    ads = data['data']
-                                    if isinstance(ads, list) and len(ads) > 0:
-                                        print(f"Meta ads found via API for {page_id}: {len(ads)} ads")
-                                        return True
-                            except:
-                                pass
+                                # Try to find JSON in response
+                                json_start = content.find('{')
+                                if json_start != -1:
+                                    json_content = content[json_start:]
+                                    json_end = json_content.rfind('}') + 1
+                                    if json_end > 0:
+                                        json_str = json_content[:json_end]
+                                        data = json.loads(json_str)
+                                        
+                                        # Check for ads in various structures
+                                        if isinstance(data, dict):
+                                            ads_data = data.get('data', data.get('payload', {}))
+                                            if isinstance(ads_data, list) and len(ads_data) > 0:
+                                                print(f"✅ Meta ads found via JSON: {len(ads_data)} ads")
+                                                return True
+                                            elif isinstance(ads_data, dict):
+                                                results = ads_data.get('results', ads_data.get('ads', []))
+                                                if results and len(results) > 0:
+                                                    print(f"✅ Meta ads found via JSON nested: {len(results)} ads")
+                                                    return True
+                            except Exception as e:
+                                print(f"JSON parsing attempt failed: {e}")
                         
-                        # Look for HTML indicators
-                        html_indicators = [
-                            'data-testid="ad-card"',
-                            'aria-label="advertisement"',
-                            'class="ad-creative"',
-                            '"active_status":"ACTIVE"',
-                            '"ad_delivery_status":"active"',
-                            'currently running',
-                            'ads are active'
+                        # Method 2: Look for strong indicators
+                        strong_indicators = [
+                            ('"isActive":true', 'Active status flag'),
+                            ('"delivery_status":"active"', 'Delivery status'),
+                            ('data-ad-id=', 'Ad ID attribute'),
+                            ('data-testid="ad_snapshot"', 'Ad snapshot element'),
+                            ('"ad_archive_id":', 'Ad archive ID'),
+                            ('"snapshot_url":', 'Snapshot URL'),
+                            ('class="ad-creative', 'Ad creative class'),
                         ]
                         
-                        found_html = [ind for ind in html_indicators if ind.lower() in content_lower]
-                        if found_html:
-                            print(f"Meta ads HTML indicators found for {page_id}: {found_html[:2]}")
+                        for indicator, description in strong_indicators:
+                            if indicator.lower() in content_lower:
+                                print(f"✅ Meta ads found: {description}")
+                                return True
+                        
+                        # Method 3: Count ad-related elements
+                        ad_element_count = 0
+                        ad_markers = ['ad_id', 'ad_creative', 'ad_snapshot', 'advertiser', 'ad_archive']
+                        for marker in ad_markers:
+                            ad_element_count += content_lower.count(marker)
+                        
+                        if ad_element_count > 5:  # Multiple ad elements suggest active ads
+                            print(f"✅ Meta ads found: {ad_element_count} ad-related elements")
                             return True
+                        
+                        # Method 4: Check if page has ads but might be filtered
+                        if page_id in content and any(x in content_lower for x in ['ads', 'advertisement', 'sponsored']):
+                            # Check if there's actually content (not just "no ads" message)
+                            no_ads_indicators = ['no ads', 'no results', 'no advertisements', 'not currently']
+                            has_no_ads = any(ind in content_lower for ind in no_ads_indicators)
+                            
+                            if not has_no_ads and len(content) > 5000:  # Substantial content
+                                print(f"✅ Meta ads suspected: Page mentioned with ad context")
+                                return True
+                    
+                    elif response.status_code == 404:
+                        print(f"Page {page_id} not found in Ad Library")
+                        continue
+                    else:
+                        print(f"Status {response.status_code} for {url[:80]}")
                         
                 except Exception as e:
-                    print(f"Error checking alternative URL {url}: {e}")
+                    print(f"Error checking URL: {e}")
                     continue
             
-            # Method 2: Search by page name/domain if we can resolve it
-            try:
-                page_info = await self._get_page_info(page_id)
-                if page_info and page_info.get('name'):
-                    page_name = page_info['name']
-                    search_url = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&q={page_name}"
-                    
-                    response = await self.client.get(search_url)
-                    if response.status_code == 200:
-                        content = response.text
-                        
-                        # Look for the page ID in search results
-                        if page_id in content and ('active' in content.lower() or 'running' in content.lower()):
-                            print(f"Meta ads found via name search for {page_id} ({page_name})")
-                            return True
-            except Exception as e:
-                print(f"Error in page name search for {page_id}: {e}")
-            
         except Exception as e:
-            print(f"Error in alternative Meta ads search for {page_id}: {e}")
+            print(f"Error in Meta ads scraping for {page_id}: {e}")
+        
+        return False
+    
+    async def _check_ads_alternative_search(self, page_id: str) -> bool:
+        """Alternative method using simpler, more reliable detection"""
+        try:
+            print(f"Trying alternative Meta ads detection for {page_id}")
+            
+            # Method 1: Try public Ad Library with different parameters
+            simple_url = f"https://www.facebook.com/ads/library/?active_status=all&ad_type=all&country=ALL&view_all_page_id={page_id}"
+            
+            try:
+                response = await self.client.get(simple_url, follow_redirects=True)
+                if response.status_code == 200:
+                    content = response.text
+                    
+                    # Simple but effective checks
+                    # If the page loads and has substantial content about ads
+                    if len(content) > 10000:  # Substantial page load
+                        # Check for specific ad library elements
+                        if ('Ad library' in content or 'ads library' in content.lower()):
+                            # Check if it's showing actual ads vs "no ads" message
+                            has_ads_content = any(x in content for x in [
+                                'ad_archive_id', 'ad_snapshot', 'ad_creative',
+                                'Started running on', 'Platforms:', 'Advertiser'
+                            ])
+                            
+                            has_no_ads = any(x in content.lower() for x in [
+                                'no ads to show', 'no results found', 'no active ads',
+                                'this page doesn\'t have ads'
+                            ])
+                            
+                            if has_ads_content and not has_no_ads:
+                                print(f"✅ Meta ads detected: Page has active ad content")
+                                return True
+                            elif has_no_ads:
+                                print(f"❌ No Meta ads: Explicitly stated no ads")
+                                return False
+                        
+            except Exception as e:
+                print(f"Error in simple check: {e}")
+            
+            # Method 2: Even simpler - just check if page exists in Ad Library at all
+            # Many pages with ads will load something, pages without won't
+            minimal_url = f"https://www.facebook.com/ads/library/?id={page_id}"
+            try:
+                response = await self.client.get(minimal_url, follow_redirects=True)
+                if response.status_code == 200 and len(response.text) > 5000:
+                    content = response.text.lower()
+                    
+                    # If page loads with ad-related content and no negative indicators
+                    if 'advertiser' in content or 'sponsored' in content or 'ad library' in content:
+                        if 'no ads' not in content and 'no results' not in content:
+                            print(f"✅ Meta ads suspected: Page exists in Ad Library")
+                            return True
+                            
+            except Exception as e:
+                print(f"Error in minimal check: {e}")
+                        
+        except Exception as e:
+            print(f"Error in alternative Meta search for {page_id}: {e}")
         
         return False
     

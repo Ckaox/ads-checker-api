@@ -1,0 +1,9 @@
+{
+  "domain": "coca-cola.com",
+  "facebook_page": "https://www.facebook.com/CocaCola",
+  "meta_page_id": null,
+  "has_meta_ads": false,
+  "has_google_ads": true,
+  "success": true,
+  "message": "Resolved both domain and Facebook page. Active ads found: Google ads detected"
+}

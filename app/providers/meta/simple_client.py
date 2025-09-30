@@ -55,40 +55,71 @@ class SimpleMetaClient:
         return None
     
     async def _resolve_username_to_id(self, username: str) -> Optional[str]:
-        """Resolve Facebook username to page ID"""
+        """Resolve Facebook username to page ID - Enhanced"""
         try:
-            if self.access_token:
-                # Use Graph API if we have token
+            print(f"🔍 Resolving username to ID: {username}")
+            
+            # Method 1: Try Graph API WITHOUT token first (works for many public pages)
+            try:
                 url = f"{self.base_url}/{username}"
-                params = {"access_token": self.access_token}
+                response = await self.client.get(url)
                 
-                response = await self.client.get(url, params=params)
                 if response.status_code == 200:
                     data = response.json()
-                    return data.get("id")
+                    page_id = data.get("id")
+                    if page_id:
+                        print(f"✅ Got Page ID from Graph API (no token): {page_id}")
+                        return page_id
+            except Exception as e:
+                print(f"Graph API without token failed: {e}")
             
-            # Fallback: try to extract from public page
+            # Method 2: Try with token if available
+            if self.access_token:
+                try:
+                    url = f"{self.base_url}/{username}"
+                    params = {"access_token": self.access_token}
+                    
+                    response = await self.client.get(url, params=params)
+                    if response.status_code == 200:
+                        data = response.json()
+                        page_id = data.get("id")
+                        if page_id:
+                            print(f"✅ Got Page ID from Graph API (with token): {page_id}")
+                            return page_id
+                except Exception as e:
+                    print(f"Graph API with token failed: {e}")
+            
+            # Method 3: Scrape the public page
+            print(f"Trying to scrape page HTML...")
             page_url = f"https://www.facebook.com/{username}"
-            response = await self.client.get(page_url)
+            response = await self.client.get(page_url, follow_redirects=True)
             
             if response.status_code == 200:
                 content = response.text
                 
-                # Look for page ID in various places
+                # Enhanced patterns
                 id_patterns = [
                     r'"page_id":"(\d+)"',
                     r'"pageID":"(\d+)"',
-                    r'entity_id":"(\d+)"',
-                    r'profile_id=(\d+)'
+                    r'"entity_id":"(\d+)"',
+                    r'profile_id=(\d+)',
+                    r'"userID":"(\d+)"',
+                    r'"id":"(\d+)"[^}]*?"__typename":"Page"',
+                    r'pageID[=:](\d+)',
+                    r'fb://page/(\d+)',
                 ]
                 
                 for pattern in id_patterns:
-                    match = re.search(pattern, content)
+                    match = re.search(pattern, content, re.IGNORECASE)
                     if match:
-                        return match.group(1)
+                        page_id = match.group(1)
+                        if page_id.isdigit() and 8 <= len(page_id) <= 20:
+                            print(f"✅ Got Page ID from HTML scraping: {page_id}")
+                            return page_id
             
+            print(f"❌ Could not resolve Page ID for username: {username}")
         except Exception as e:
-            print(f"Error resolving username {username}: {e}")
+            print(f"❌ Error resolving username {username}: {e}")
         
         return None
     

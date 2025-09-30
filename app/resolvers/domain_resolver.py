@@ -64,14 +64,17 @@ class DomainResolver:
     
     async def domain_to_facebook(self, domain: str) -> Optional[str]:
         """
-        Find Facebook page URL from a domain
+        Find Facebook page URL from a domain - Enhanced with multiple methods
         """
         try:
             domain = self._clean_domain(domain)
             if not domain:
                 return None
             
-            # Try both protocols
+            print(f"\n🔍 Searching for Facebook page for domain: {domain}")
+            
+            # Method 1: Check website HTML for Facebook links
+            print(f"📍 Method 1: Checking website HTML...")
             for protocol in ["https", "http"]:
                 try:
                     url = f"{protocol}://{domain}"
@@ -80,16 +83,32 @@ class DomainResolver:
                     if response.status_code == 200:
                         facebook_url = await self._extract_facebook_from_html(response.text, domain)
                         if facebook_url:
+                            print(f"✅ Found in HTML: {facebook_url}")
                             return facebook_url
                         
                 except Exception as e:
                     print(f"Error fetching {protocol}://{domain}: {e}")
                     continue
             
+            # Method 2: Search Google for "{domain} facebook"
+            print(f"📍 Method 2: Searching Google...")
+            facebook_url = await self._search_facebook_via_google(domain)
+            if facebook_url:
+                print(f"✅ Found via Google: {facebook_url}")
+                return facebook_url
+            
+            # Method 3: Try common Facebook URL patterns
+            print(f"📍 Method 3: Trying common patterns...")
+            facebook_url = await self._try_common_facebook_patterns(domain)
+            if facebook_url:
+                print(f"✅ Found via pattern: {facebook_url}")
+                return facebook_url
+            
+            print(f"❌ No Facebook page found for {domain}")
             return None
             
         except Exception as e:
-            print(f"Error resolving Facebook page for domain {domain}: {e}")
+            print(f"❌ Error resolving Facebook page for domain {domain}: {e}")
             return None
     
     async def _extract_facebook_from_html(self, html: str, domain: str) -> Optional[str]:
@@ -287,6 +306,113 @@ class DomainResolver:
             
         except:
             return None
+    
+    async def _search_facebook_via_google(self, domain: str) -> Optional[str]:
+        """Search Google for Facebook page of the domain"""
+        try:
+            # Extract brand name from domain
+            brand = domain.split('.')[0]
+            
+            # Search queries to try
+            queries = [
+                f"{domain} facebook",
+                f"{brand} facebook page",
+                f'site:facebook.com "{brand}"'
+            ]
+            
+            for query in queries:
+                try:
+                    search_url = "https://www.google.com/search"
+                    params = {
+                        "q": query,
+                        "hl": "en"
+                    }
+                    
+                    response = await self.client.get(search_url, params=params)
+                    
+                    if response.status_code == 200:
+                        # Look for Facebook URLs in search results
+                        facebook_urls = re.findall(
+                            r'(https?://(?:www\.)?facebook\.com/[a-zA-Z0-9._-]+)/?',
+                            response.text
+                        )
+                        
+                        for url in facebook_urls:
+                            # Clean and validate
+                            clean_url = self._extract_facebook_url(url)
+                            if clean_url and self._is_valid_facebook_page(clean_url):
+                                # Verify it's not a generic/unrelated page
+                                if brand.lower() in clean_url.lower() or await self._verify_facebook_page_matches_domain(clean_url, domain):
+                                    return clean_url
+                
+                except Exception as e:
+                    print(f"Error searching Google with query '{query}': {e}")
+                    continue
+            
+        except Exception as e:
+            print(f"Error in Google search: {e}")
+        
+        return None
+    
+    async def _try_common_facebook_patterns(self, domain: str) -> Optional[str]:
+        """Try common Facebook URL patterns based on domain"""
+        try:
+            brand = domain.split('.')[0]
+            
+            # Common patterns
+            patterns = [
+                f"https://www.facebook.com/{brand}",
+                f"https://www.facebook.com/{brand.capitalize()}",
+                f"https://www.facebook.com/{brand.upper()}",
+                f"https://www.facebook.com/{brand.replace('-', '')}",
+                f"https://www.facebook.com/{brand.replace('_', '')}",
+                f"https://www.facebook.com/{domain.replace('.', '')}",
+            ]
+            
+            for pattern_url in patterns:
+                try:
+                    response = await self.client.get(pattern_url)
+                    
+                    # If page exists and looks valid (not redirect to home, not 404)
+                    if response.status_code == 200:
+                        # Check if it's actually a page and not Facebook home
+                        if "facebook.com/login" not in response.url.path and \
+                           "Page Not Found" not in response.text:
+                            return pattern_url
+                
+                except Exception:
+                    continue
+            
+        except Exception as e:
+            print(f"Error trying common patterns: {e}")
+        
+        return None
+    
+    async def _verify_facebook_page_matches_domain(self, facebook_url: str, domain: str) -> bool:
+        """Verify that a Facebook page actually belongs to the domain"""
+        try:
+            # Fetch the Facebook page
+            response = await self.client.get(facebook_url)
+            
+            if response.status_code == 200:
+                html = response.text.lower()
+                domain_lower = domain.lower()
+                
+                # Check if domain is mentioned in the page
+                if domain_lower in html:
+                    return True
+                
+                # Check if domain is in website link
+                website_match = re.search(r'(?:website|site).*?href="([^"]*)"', html, re.IGNORECASE)
+                if website_match:
+                    website = website_match.group(1).lower()
+                    if domain_lower in website:
+                        return True
+            
+        except Exception:
+            pass
+        
+        return False
     
     async def close(self):
         """Close the HTTP client"""

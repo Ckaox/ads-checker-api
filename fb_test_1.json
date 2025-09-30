@@ -1,0 +1,9 @@
+{
+  "domain": "nike.com",
+  "facebook_page": "https://www.facebook.com/nike",
+  "meta_page_id": null,
+  "has_meta_ads": false,
+  "has_google_ads": false,
+  "success": true,
+  "message": "Resolved both domain and Facebook page. No active ads detected"
+}

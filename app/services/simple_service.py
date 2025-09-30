@@ -110,7 +110,15 @@ class SimpleAdsService:
         # Extract Meta page ID from Facebook page
         if facebook_page:
             try:
+                # Try facebook_resolver first
                 meta_page_id = await self.facebook_resolver.extract_page_id(facebook_page)
+                
+                # If that fails, try using Meta client (has better Graph API access)
+                if not meta_page_id:
+                    print(f"⚠️  facebook_resolver failed, trying Meta client...")
+                    meta_page_id = await self.meta_client.get_page_id(facebook_page)
+                    if meta_page_id:
+                        print(f"✅ Meta client got Page ID: {meta_page_id}")
             except Exception as e:
                 print(f"Error extracting page ID from {facebook_page}: {e}")
         
